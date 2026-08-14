@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Switchframe — Fix Factory Values</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:20px}
+  input{font-size:14px;padding:9px 11px;border:1px solid #ccc;border-radius:8px;width:260px;margin:4px 0}
+  button{font-size:15px;font-weight:700;padding:12px 22px;border:0;border-radius:9px;color:#fff;cursor:pointer;margin-right:10px;margin-top:8px}
+  #signin{background:#1768d8}
+  #fix{background:#1f9d57}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  #log{margin-top:20px;background:#f4f4f4;border:1px solid #ddd;border-radius:8px;padding:14px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;max-height:420px;overflow:auto}
+  .warn{background:#fff3cd;border:1px solid #ffe08a;padding:12px;border-radius:8px;font-size:13px;margin:14px 0}
+  .row{margin:6px 0}
+</style>
+</head>
+<body>
+<h1>Switchframe — Fix factory values</h1>
+<div class="warn">This updates every unit's factory to either <b>Livermore</b> or <b>San Leandro</b> (split roughly in half, kept stable per unit). Sign in first, then click Fix.</div>
+
+<div class="row"><input id="email" placeholder="manager email" type="email"></div>
+<div class="row"><input id="pw" placeholder="password" type="password"></div>
+<button id="signin">Sign in</button>
+<hr style="margin:20px 0">
+<button id="fix" disabled>Fix all factory values</button>
+<div id="log">Ready. Sign in to begin.</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getFirestore, collection, getDocs, doc, writeBatch }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBBDUh_m3qRi9pc_Mjk-xXeFg7fvotdWz4",
+  authDomain: "switchframe-app.firebaseapp.com",
+  projectId: "switchframe-app",
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const logEl = document.getElementById("log");
+function log(m){ logEl.textContent += "\n"+m; logEl.scrollTop = logEl.scrollHeight; }
+
+document.getElementById("signin").onclick = async () => {
+  const email = document.getElementById("email").value.trim();
+  const pw = document.getElementById("pw").value;
+  logEl.textContent = "Signing in…";
+  try{
+    await signInWithEmailAndPassword(auth, email, pw);
+    log("✓ Signed in as "+email);
+    document.getElementById("fix").disabled = false;
+  }catch(e){ log("Sign-in failed: "+e.message); }
+};
+
+// Stable pick: same unit always gets the same factory (based on its serial)
+function factoryFor(id){
+  var s = String(id||"");
+  var sum = 0;
+  for(var i=0;i<s.length;i++){ sum += s.charCodeAt(i); }
+  return (sum % 2 === 0) ? "Livermore" : "San Leandro";
+}
+
+document.getElementById("fix").onclick = async () => {
+  logEl.textContent = "Updating factory values…";
+  try{
+    const snap = await getDocs(collection(db,"units"));
+    let n=0, liv=0, sl=0, batch=writeBatch(db), inBatch=0;
+    for(const d of snap.docs){
+      const u = d.data();
+      const fac = factoryFor(u.id || d.id);
+      if(fac==="Livermore") liv++; else sl++;
+      const sheet = Object.assign({}, u.sheet||{}, {factory:fac});
+      batch.update(doc(db,"units",d.id), {sheet:sheet});
+      inBatch++; n++;
+      if(inBatch===400){ await batch.commit(); batch=writeBatch(db); inBatch=0; log("updated "+n+"…"); }
+    }
+    if(inBatch>0) await batch.commit();
+    log("✓ Updated "+n+" units. Livermore: "+liv+", San Leandro: "+sl+".");
+    log("Open the app and hard-refresh (Cmd+Shift+R) to see it.");
+  }catch(e){ log("ERROR: "+e.message); }
+};
+</script>
+</body>
+</html>

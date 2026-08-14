@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Switchframe — Seed 2024 + 2025 History</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:20px}
+  input{font-size:14px;padding:9px 11px;border:1px solid #ccc;border-radius:8px;width:260px;margin:4px 0}
+  button{font-size:15px;font-weight:700;padding:12px 22px;border:0;border-radius:9px;color:#fff;cursor:pointer;margin-right:10px;margin-top:8px}
+  #signin{background:#1768d8}
+  #seed24{background:#1f9d57}
+  #seed25{background:#1f9d57}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  #log{margin-top:20px;background:#f4f4f4;border:1px solid #ddd;border-radius:8px;padding:14px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;max-height:420px;overflow:auto}
+  .warn{background:#fff3cd;border:1px solid #ffe08a;padding:12px;border-radius:8px;font-size:13px;margin:14px 0}
+  .row{margin:6px 0}
+</style>
+</head>
+<body>
+<h1>Switchframe — Seed historical units (2024 + 2025)</h1>
+<div class="warn">This ADDS 120 shipped units dated in 2024, and 120 shipped units dated in 2025. It does NOT delete anything. All are shipped; none are RMA or on hold. Some are flagged with a reason (caught + fixed). Sign in first.</div>
+
+<div class="row"><input id="email" placeholder="manager email" type="email"></div>
+<div class="row"><input id="pw" placeholder="password" type="password"></div>
+<button id="signin">Sign in</button>
+<hr style="margin:20px 0">
+<button id="seed24" disabled>Add 120 units — 2024</button>
+<button id="seed25" disabled>Add 120 units — 2025</button>
+<div id="log">Ready. Sign in to begin.</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getFirestore, collection, doc, writeBatch }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBBDUh_m3qRi9pc_Mjk-xXeFg7fvotdWz4",
+  authDomain: "switchframe-app.firebaseapp.com",
+  projectId: "switchframe-app",
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const logEl = document.getElementById("log");
+function log(m){ logEl.textContent += "\n"+m; logEl.scrollTop = logEl.scrollHeight; }
+
+document.getElementById("signin").onclick = async () => {
+  const email = document.getElementById("email").value.trim();
+  const pw = document.getElementById("pw").value;
+  logEl.textContent = "Signing in…";
+  try{
+    await signInWithEmailAndPassword(auth, email, pw);
+    log("✓ Signed in as "+email);
+    document.getElementById("seed24").disabled = false;
+    document.getElementById("seed25").disabled = false;
+  }catch(e){ log("Sign-in failed: "+e.message); }
+};
+
+const STATIONS = [
+  {key:"bparts",cycle:null},{key:"laser",cycle:null},{key:"weld1a",cycle:151},
+  {key:"weld1b",cycle:119},{key:"weld1c",cycle:69},{key:"bussa",cycle:61},
+  {key:"bussb",cycle:50},{key:"bussc",cycle:12},{key:"weld2a",cycle:64},
+  {key:"weld2b",cycle:89},{key:"leak",cycle:33},{key:"hood",cycle:108},
+  {key:"basea",cycle:68},{key:"baseb",cycle:89},{key:"basec",cycle:105},
+  {key:"cab",cycle:81},{key:"paint",cycle:null},{key:"fa1",cycle:97},
+  {key:"ftest",cycle:45},{key:"fa2",cycle:22},{key:"ship",cycle:null}
+];
+const N = STATIONS.length;
+const CUSTOMERS = ["Pacific G&E","Duke Energy","Con Edison","Xcel Energy","Dominion",
+  "Southern Co","AEP","Exelon","NextEra","PPL Electric","Georgia Power","Entergy",
+  "FirstEnergy","PSE&G","National Grid"];
+const MODELS = ["Padmount RMU · 27kV · 4-Way","Padmount RMU · 15kV · 2-Way",
+  "Padmount RMU · 38kV · 4-Way","Padmount RMU · 27kV · 6-Way","Padmount RMU · 15kV · 4-Way"];
+const OPS = ["4471","4208","3852","5013","4720","3399","5188","4055"];
+const FACTORIES = ["Livermore","San Leandro"];
+
+// realistic flag reasons per kind of station
+const FLAG_REASONS = [
+  {stationKeys:["weld1a","weld1b","weld1c","weld2a","weld2b"], reasons:["Weld porosity found on retest","Undercut on main seam","Spatter not cleaned","Incomplete penetration","Cracked tack weld"]},
+  {stationKeys:["bussa","bussb","bussc"], reasons:["Wrong torque on bus bolt","Phase wiring reversed","Loose lug connection","Missing insulation boot"]},
+  {stationKeys:["leak"], reasons:["Failed leak test — reseated gasket","Slow pressure drop","O-ring pinched"]},
+  {stationKeys:["hood","basea","baseb","basec"], reasons:["Bent bracket","Hole misaligned","Powder coat chip","Weld distortion on base"]},
+  {stationKeys:["cab"], reasons:["Door misalignment","Latch not seating","Gasket gap"]},
+  {stationKeys:["fa1","fa2"], reasons:["Missing hardware","Label placement wrong","Torque check failed"]},
+  {stationKeys:["ftest"], reasons:["Hi-pot retest needed","Dielectric borderline","Meter calibration recheck"]}
+];
+function reasonForStation(key){
+  for(const g of FLAG_REASONS){ if(g.stationKeys.indexOf(key)>=0) return g.reasons[Math.floor(Math.random()*g.reasons.length)]; }
+  return "Quality issue caught on inspection";
+}
+
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function randInt(a,b){ return a+Math.floor(Math.random()*(b-a+1)); }
+function pad(x){ return String(x).padStart(2,"0"); }
+function stampTime(d){ var h=d.getHours(); var ap=h>=12?"PM":"AM"; var h12=h%12; if(h12===0)h12=12; return (d.getMonth()+1)+"/"+d.getDate()+" "+h12+":"+pad(d.getMinutes())+" "+ap; }
+
+// build one shipped unit in the given year
+function buildUnit(year, seq){
+  var serial = "RMU-"+String(year).slice(2)+String(1000+seq).padStart(4,"0")+pick(["A","B","C"]);
+  // random ship date within the year
+  var month = randInt(0,11);
+  var day = randInt(1,28);
+  var shipDate = new Date(year, month, day, randInt(7,16), randInt(0,59));
+  // created ~10-40 days before ship
+  var created = new Date(shipDate.getTime() - randInt(10,40)*86400000);
+  var due = new Date(shipDate.getTime() + randInt(-5,10)*86400000);
+
+  var u = {
+    id: serial,
+    order: "JOB-"+year+"-"+String(1000+seq),
+    customer: pick(CUSTOMERS),
+    model: pick(MODELS),
+    qty: randInt(1,4),
+    dueDate: due.toISOString().slice(0,10),
+    customerDueDate: new Date(due.getTime()+randInt(0,7)*86400000).toISOString().slice(0,10),
+    salesOrderNumber: "SO-"+year+"-"+String(2000+seq),
+    createdAt: created.toISOString(),
+    createdBy: pick(OPS),
+    sheet: { factory: pick(FACTORIES) },
+    stamps: {},
+    comments: [],
+    isDemo: true,
+    events: [{ type:"ship", date: shipDate.toISOString().slice(0,10) }],
+    greenTag: { by: pick(OPS), at: shipDate.toISOString() }
+  };
+  if(Math.random()<0.12) u.shippedEarly = true;
+
+  // fill all station stamps with times
+  var t = new Date(created.getTime());
+  STATIONS.forEach(function(st){
+    t = new Date(t.getTime()+randInt(20,180)*60000);
+    var s = { op: pick(OPS), time: stampTime(t) };
+    if(st.cycle!=null){ s.cycleMin = st.cycle; s.actualMin = Math.max(1, Math.round(st.cycle*(0.8+Math.random()*0.5))); }
+    u.stamps[st.key] = s;
+  });
+
+  // ~30% of units had a flag during the build — caught then fixed
+  if(Math.random()<0.30){
+    var flagStationIdx = randInt(2, N-3);
+    var fk = STATIONS[flagStationIdx].key;
+    var caughtBy = pick(OPS);
+    var fixedBy = pick(OPS);
+    var caughtAt = new Date(created.getTime()+randInt(2,20)*86400000*0.3);
+    var fixedAt = new Date(caughtAt.getTime()+randInt(1,8)*3600000);
+    var reason = reasonForStation(fk);
+    u.flagHistory = [{
+      note: reason,
+      by: caughtBy,
+      at: caughtAt.toISOString(),
+      station: flagStationIdx,
+      stationName: STATIONS[flagStationIdx].full || STATIONS[flagStationIdx].key,
+      resolvedBy: fixedBy,
+      resolvedAt: fixedAt.toISOString(),
+      resolvedStation: STATIONS[flagStationIdx].full || STATIONS[flagStationIdx].key,
+      resolution: "Retest passed"
+    }];
+    // some also got a second flag elsewhere
+    if(Math.random()<0.25){
+      var f2idx = randInt(2, N-3);
+      var f2k = STATIONS[f2idx].key;
+      var c2 = new Date(caughtAt.getTime()+randInt(1,5)*86400000);
+      var fx2 = new Date(c2.getTime()+randInt(1,8)*3600000);
+      u.flagHistory.push({
+        note: reasonForStation(f2k),
+        by: pick(OPS),
+        at: c2.toISOString(),
+        station: f2idx,
+        stationName: STATIONS[f2idx].full || STATIONS[f2idx].key,
+        resolvedBy: pick(OPS),
+        resolvedAt: fx2.toISOString(),
+        resolvedStation: STATIONS[f2idx].full || STATIONS[f2idx].key,
+        resolution: "Retest passed"
+      });
+    }
+  }
+  return u;
+}
+
+async function seedYear(year){
+  logEl.textContent = "Creating 120 units for "+year+"…";
+  try{
+    var n=0, batch=writeBatch(db), inBatch=0;
+    for(var i=0;i<120;i++){
+      var u = buildUnit(year, i);
+      batch.set(doc(db,"units",u.id), u); inBatch++; n++;
+      if(inBatch===400){ await batch.commit(); batch=writeBatch(db); inBatch=0; log("created "+n+"…"); }
+    }
+    if(inBatch>0) await batch.commit();
+    log("✓ Added "+n+" shipped units for "+year+" (about 30% flagged).");
+    log("Open the app and hard-refresh (Cmd+Shift+R).");
+  }catch(e){ log("ERROR: "+e.message); }
+}
+
+document.getElementById("seed24").onclick = () => seedYear(2024);
+document.getElementById("seed25").onclick = () => seedYear(2025);
+</script>
+</body>
+</html>

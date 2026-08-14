@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Switchframe — Seed 120 Units</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:20px}
+  input{font-size:14px;padding:9px 11px;border:1px solid #ccc;border-radius:8px;width:260px;margin:4px 0}
+  button{font-size:15px;font-weight:700;padding:12px 22px;border:0;border-radius:9px;color:#fff;cursor:pointer;margin-right:10px;margin-top:8px}
+  #signin{background:#1768d8}
+  #clear{background:#c0392b}
+  #seed{background:#1f9d57}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  #log{margin-top:20px;background:#f4f4f4;border:1px solid #ddd;border-radius:8px;padding:14px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;max-height:420px;overflow:auto}
+  .warn{background:#fff3cd;border:1px solid #ffe08a;padding:12px;border-radius:8px;font-size:13px;margin:14px 0}
+  .row{margin:6px 0}
+</style>
+</head>
+<body>
+<h1>Switchframe — Seed 120 demo units</h1>
+<div class="warn">Sign in first with your manager account (so the database allows writes). Then Step 1 deletes all units, Step 2 creates 120 fresh ones for the new 21-station line.</div>
+
+<div class="row"><input id="email" placeholder="manager email" type="email"></div>
+<div class="row"><input id="pw" placeholder="password" type="password"></div>
+<button id="signin">Sign in</button>
+<hr style="margin:20px 0">
+<button id="clear" disabled>Step 1 — Delete all units</button>
+<button id="seed" disabled>Step 2 — Create 120 units</button>
+<div id="log">Ready. Sign in to begin.</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getFirestore, collection, getDocs, doc, deleteDoc, writeBatch }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword }
+  from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBBDUh_m3qRi9pc_Mjk-xXeFg7fvotdWz4",
+  authDomain: "switchframe-app.firebaseapp.com",
+  projectId: "switchframe-app",
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const logEl = document.getElementById("log");
+function log(m){ logEl.textContent += "\n"+m; logEl.scrollTop = logEl.scrollHeight; }
+
+document.getElementById("signin").onclick = async () => {
+  const email = document.getElementById("email").value.trim();
+  const pw = document.getElementById("pw").value;
+  logEl.textContent = "Signing in…";
+  try{
+    await signInWithEmailAndPassword(auth, email, pw);
+    log("✓ Signed in as "+email);
+    document.getElementById("clear").disabled = false;
+    document.getElementById("seed").disabled = false;
+  }catch(e){ log("Sign-in failed: "+e.message); }
+};
+
+const STATIONS = [
+  {key:"bparts",cycle:null},{key:"laser",cycle:null},{key:"weld1a",cycle:151},
+  {key:"weld1b",cycle:119},{key:"weld1c",cycle:69},{key:"bussa",cycle:61},
+  {key:"bussb",cycle:50},{key:"bussc",cycle:12},{key:"weld2a",cycle:64},
+  {key:"weld2b",cycle:89},{key:"leak",cycle:33},{key:"hood",cycle:108},
+  {key:"basea",cycle:68},{key:"baseb",cycle:89},{key:"basec",cycle:105},
+  {key:"cab",cycle:81},{key:"paint",cycle:null},{key:"fa1",cycle:97},
+  {key:"ftest",cycle:45},{key:"fa2",cycle:22},{key:"ship",cycle:null}
+];
+const N = STATIONS.length;
+const CUSTOMERS = ["Pacific G&E","Duke Energy","Con Edison","Xcel Energy","Dominion",
+  "Southern Co","AEP","Exelon","NextEra","PPL Electric","Georgia Power","Entergy",
+  "FirstEnergy","PSE&G","National Grid"];
+const MODELS = ["Padmount RMU · 27kV · 4-Way","Padmount RMU · 15kV · 2-Way",
+  "Padmount RMU · 38kV · 4-Way","Padmount RMU · 27kV · 6-Way","Padmount RMU · 15kV · 4-Way"];
+const OPS = ["4471","4208","3852","5013","4720","3399","5188","4055"];
+
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function randInt(a,b){ return a+Math.floor(Math.random()*(b-a+1)); }
+function pad(x){ return String(x).padStart(2,"0"); }
+function stampTime(d){ return pad(d.getMonth()+1)+"/"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes()); }
+function isoNowMinus(hrs){ return new Date(Date.now()-hrs*3600000).toISOString(); }
+
+function buildUnit(i){
+  const serial = "RMU-25" + String(4400+i).padStart(4,"0") + pick(["A","B","C"]);
+  const now = new Date();
+  const created = new Date(now.getTime() - randInt(5,60)*86400000);
+  const due = new Date(now.getTime() + randInt(-6,40)*86400000);
+  const custDue = new Date(due.getTime() + randInt(0,7)*86400000);
+  const u = {
+    id: serial, order: "JOB-"+String(10520+i), customer: pick(CUSTOMERS),
+    model: pick(MODELS), qty: randInt(1,4),
+    dueDate: due.toISOString().slice(0,10),
+    customerDueDate: custDue.toISOString().slice(0,10),
+    salesOrderNumber: "SO-"+String(88000+i),
+    createdAt: created.toISOString(), createdBy: pick(OPS),
+    sheet: { factory: pick(["Trayer - Line 1","Trayer - Line 2"]) },
+    stamps: {}, comments: [], isDemo: true
+  };
+  let bucket;
+  if(i<=54) bucket="shipped";
+  else if(i<=96) bucket="online";
+  else if(i<=104) bucket="hold";
+  else if(i<=112) bucket="rework";
+  else bucket="rma";
+
+  function doneStamp(st, when){
+    const s = { op: pick(OPS), time: stampTime(when) };
+    if(st.cycle!=null){ s.cycleMin = st.cycle; s.actualMin = Math.max(1, Math.round(st.cycle*(0.8+Math.random()*0.5))); }
+    return s;
+  }
+  if(bucket==="shipped"){
+    let t = new Date(created.getTime());
+    STATIONS.forEach((st)=>{ t = new Date(t.getTime()+randInt(20,180)*60000); u.stamps[st.key]=doneStamp(st,t); });
+    const shipDate = new Date(now.getTime() - randInt(0,120)*86400000);
+    u.events = [{ type:"ship", date: shipDate.toISOString().slice(0,10) }];
+    u.greenTag = { by: pick(OPS), at: shipDate.toISOString() };
+    if(Math.random()<0.12) u.shippedEarly = true;
+  } else if(bucket==="online"){
+    const cur = randInt(2, N-2);
+    let t = new Date(created.getTime());
+    for(let s=0;s<cur;s++){ t=new Date(t.getTime()+randInt(20,180)*60000); u.stamps[STATIONS[s].key]=doneStamp(STATIONS[s],t); }
+    u.stamps[STATIONS[cur].key] = { active:true, arrived: new Date(t.getTime()+randInt(10,120)*60000).toISOString() };
+    if(Math.random()<0.15) u.critical = true;
+    if(Math.random()<0.10) u.activeFlag = { by: pick(OPS), reason: pick(["Weld porosity","Wrong gasket","Paint scratch","Missing hardware"]), at: isoNowMinus(randInt(1,72)) };
+  } else if(bucket==="hold"){
+    const cur = randInt(2, N-3);
+    let t = new Date(created.getTime());
+    for(let s=0;s<cur;s++){ t=new Date(t.getTime()+randInt(20,180)*60000); u.stamps[STATIONS[s].key]=doneStamp(STATIONS[s],t); }
+    u.stamps[STATIONS[cur].key] = { hold:true, arrived: new Date(t.getTime()+randInt(10,120)*60000).toISOString() };
+    u.onHold = true;
+  } else if(bucket==="rework"){
+    const cur = randInt(3, N-3);
+    let t = new Date(created.getTime());
+    for(let s=0;s<cur;s++){ t=new Date(t.getTime()+randInt(20,180)*60000); u.stamps[STATIONS[s].key]=doneStamp(STATIONS[s],t); }
+    u.stamps[STATIONS[cur].key] = { op:"—", time: stampTime(now), active:true, arrived: isoNowMinus(randInt(1,48)) };
+    u.rework = true; u.reworkStation = STATIONS[cur].key;
+  } else {
+    let t = new Date(created.getTime());
+    STATIONS.forEach((st)=>{ t=new Date(t.getTime()+randInt(20,180)*60000); u.stamps[st.key]=doneStamp(st,t); });
+    const re = randInt(6, N-4);
+    for(let s=re;s<N;s++){ delete u.stamps[STATIONS[s].key]; }
+    u.stamps[STATIONS[re].key] = { active:true, arrived: isoNowMinus(randInt(1,72)) };
+    u.isRmaUnit = true;
+    u.rmaReason = pick(["Field leak","DGA failure","Bushing crack","Customer damage"]);
+    u.rmaDate = isoNowMinus(randInt(3,90));
+    u.events = [{ type:"ship", date: new Date(created.getTime()+30*86400000).toISOString().slice(0,10) }];
+  }
+  return u;
+}
+
+document.getElementById("clear").onclick = async () => {
+  if(!confirm("Delete ALL units from the live database? This cannot be undone.")) return;
+  logEl.textContent = "Deleting all units…";
+  try{
+    const snap = await getDocs(collection(db,"units"));
+    let n=0, batch=writeBatch(db), inBatch=0;
+    for(const d of snap.docs){
+      batch.delete(doc(db,"units",d.id)); inBatch++; n++;
+      if(inBatch===400){ await batch.commit(); batch=writeBatch(db); inBatch=0; log("deleted "+n+"…"); }
+    }
+    if(inBatch>0) await batch.commit();
+    log("✓ Deleted "+n+" units. Now run Step 2.");
+  }catch(e){ log("ERROR: "+e.message); }
+};
+
+document.getElementById("seed").onclick = async () => {
+  logEl.textContent = "Creating 120 units…";
+  try{
+    let n=0, batch=writeBatch(db), inBatch=0;
+    for(let i=0;i<120;i++){
+      const u = buildUnit(i);
+      batch.set(doc(db,"units",u.id), u); inBatch++; n++;
+      if(inBatch===400){ await batch.commit(); batch=writeBatch(db); inBatch=0; log("created "+n+"…"); }
+    }
+    if(inBatch>0) await batch.commit();
+    log("✓ Created "+n+" units across shipped / on-line / hold / rework / RMA.");
+    log("Done! Open the app and hard-refresh (Cmd+Shift+R).");
+  }catch(e){ log("ERROR: "+e.message); }
+};
+</script>
+</body>
+</html>
