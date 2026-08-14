@@ -1,0 +1,21 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "firestore.rules",
+      "**/.*",
+      "**/node_modules/**",
+      "functions/**",
+      "*.md",
+      "*.txt",
+      "seed-units.html",
+      "seed-history.html",
+      "fix-factory.html"
+    ],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }]
+  }
+}
