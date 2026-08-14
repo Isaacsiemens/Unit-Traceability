@@ -19,6 +19,7 @@ Live at: https://switchframe-app.web.app
 ### Planning docs (Phase 2 roadmap)
 - **multiproduct-plan.md** — the vision for one connected dashboard across all products
 - **archive-plan.md** — the long-term archive plan for scale
+- security plan 
 
 ### Utility tools (run once, then remove from live site)
 - **seed-units.html** — creates 120 current demo units
